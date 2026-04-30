@@ -7,6 +7,15 @@ const { MongoClient, ObjectId } = require('mongodb');
 const app = express();
 const PORT = process.env.PORT || 3001;
 
+// Print all env vars on startup to debug
+console.log('=== STARTUP CHECK ===');
+console.log('MONGO_URI exists:', !!process.env.MONGO_URI);
+console.log('MONGO_URI value:', process.env.MONGO_URI ? process.env.MONGO_URI.substring(0, 30) + '...' : 'MISSING');
+console.log('CLOUDINARY_CLOUD_NAME:', process.env.CLOUDINARY_CLOUD_NAME || 'MISSING');
+console.log('CLOUDINARY_API_KEY exists:', !!process.env.CLOUDINARY_API_KEY);
+console.log('CLOUDINARY_API_SECRET exists:', !!process.env.CLOUDINARY_API_SECRET);
+console.log('=====================');
+
 cloudinary.config({
   cloud_name: process.env.CLOUDINARY_CLOUD_NAME,
   api_key:    process.env.CLOUDINARY_API_KEY,
@@ -14,9 +23,23 @@ cloudinary.config({
 });
 
 let db;
-MongoClient.connect(process.env.MONGO_URI)
-  .then(client => { db = client.db('birthday'); console.log('DB connected'); })
-  .catch(err  => { console.error('DB error:', err.message); process.exit(1); });
+const uri = process.env.MONGO_URI;
+
+if (!uri) {
+  console.error('FATAL: MONGO_URI environment variable is not set!');
+  process.exit(1);
+}
+
+MongoClient.connect(uri, { serverSelectionTimeoutMS: 10000 })
+  .then(client => {
+    db = client.db('birthday');
+    console.log('✅ MongoDB connected successfully!');
+  })
+  .catch(err => {
+    console.error('❌ MongoDB connection failed:', err.message);
+    console.error('Full error:', JSON.stringify(err, null, 2));
+    process.exit(1);
+  });
 
 app.use(cors());
 app.use(express.json());
@@ -34,7 +57,6 @@ const toCloud = (buf) => new Promise((res, rej) =>
 
 const fmt = (d) => ({ ...d, id: d._id.toString() });
 
-// PHOTOS
 app.get('/api/photos', async (req, res) => {
   const data = await db.collection('photos').find().sort({ createdAt: -1 }).toArray();
   res.json(data.map(fmt));
@@ -60,7 +82,6 @@ app.delete('/api/photos/:id', async (req, res) => {
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
-// NOTES
 app.get('/api/notes', async (req, res) => {
   const data = await db.collection('notes').find().sort({ createdAt: -1 }).toArray();
   res.json(data.map(fmt));
